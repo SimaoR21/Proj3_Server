@@ -9,12 +9,17 @@ from ultralytics import YOLO
 from color import get_color_and_shade, get_coloradd_symbol
 from util import put_unicode_text
 
-MIN_COLOR_CONFIDENCE = 0.22
+MIN_COLOR_CONFIDENCE = 0.0  # desativado temporariamente para testes
 
+# Carrega o modelo YOLO
 model = YOLO("yolov8m.pt")
 
 app = Flask(__name__)
 
+# Endpoint de saúde (opcional, para testes GET simples)
+@app.route("/")
+def health():
+    return {"status": "ok"}
 
 @app.route("/detect", methods=["POST"])
 def detect():
@@ -25,11 +30,13 @@ def detect():
     if file.filename == "":
         return jsonify({"error": "No selected file"}), 400
 
+    # Lê imagem
     img_bytes = file.read()
     img = Image.open(BytesIO(img_bytes)).convert("RGB")
     frame = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
 
-    frame = cv2.resize(frame, (640, 640))
+    # NÃO redimensionar mais → mantém coordenadas reais
+    # frame = cv2.resize(frame, (640, 640))
 
     results = model(frame, conf=0.52, iou=0.45, verbose=False)[0]
 
@@ -45,9 +52,15 @@ def detect():
         if roi.size == 0:
             continue
 
-        color_name, color_conf = get_color_and_shade(roi)
-        if color_conf < MIN_COLOR_CONFIDENCE:
-            continue
+        # Desativa filtro de cor para teste
+        try:
+            color_name, color_conf = get_color_and_shade(roi)
+        except Exception:
+            color_name, color_conf = "unknown", 0.0
+
+        # Filtro desativado temporariamente
+        # if color_conf < MIN_COLOR_CONFIDENCE:
+        #     continue
 
         symbol = get_coloradd_symbol(color_name)
         label = f"{name} {int(conf * 100)}% {color_name} {symbol}"
@@ -60,7 +73,11 @@ def detect():
             "label": label
         })
 
-    return jsonify({"bounding_boxes": bounding_boxes})
+    return jsonify({
+        "width": frame.shape[1],   # largura real
+        "height": frame.shape[0],  # altura real
+        "bounding_boxes": bounding_boxes
+    })
 
 
 if __name__ == "__main__":
